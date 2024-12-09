@@ -1,6 +1,7 @@
 import scapy.all as scapy
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP
+from scapy.packet import Raw, Padding
 import socket
 import threading
 import tkinter as tk
@@ -15,7 +16,7 @@ from tkinter import simpledialog
 captured_data = []
 def parse_packet(packet):
     result = {}
-    
+    #print(packet.show())
     # 解析ARP报文
     if packet.haslayer(ARP):
         result['Protocol'] = "ARP"
@@ -27,8 +28,9 @@ def parse_packet(packet):
         result['Protocol'] = "IP"
         result['Source'] = packet[IP].src
         result['Destination'] = packet[IP].dst
-        result['Data'] = bytes(packet[IP].payload).decode('utf-8', errors='ignore')
-        
+        #result['Data'] = bytes(packet[IP].payload).decode('utf-8', errors='ignore')
+        result['Data'] = packet[IP].payload
+        #print('aaaa',result['Data'])
         # 进一步解析ICMP/TCP/UDP层
         if packet.haslayer(ICMP):
             result['Protocol'] = "ICMP"
@@ -36,15 +38,25 @@ def parse_packet(packet):
             result['Protocol'] = "TCP"
             result['Source Port'] = packet[TCP].sport
             result['Destination Port'] = packet[TCP].dport
+            #result['Raw Data'] = packet[TCP].payload
+            #print('bbbb',result['Raw Data'])
+            
         elif packet.haslayer(UDP):
             result['Protocol'] = "UDP"
             result['Source Port'] = packet[UDP].sport
             result['Destination Port'] = packet[UDP].dport
-        
+
+        if packet.haslayer(Raw):
+            result['Raw Data'] = packet[Raw].load
+            #print(result['Raw Data'])
+        if packet.haslayer(Padding):
+            result['Padding Data'] = packet[Padding].load
+            #print(result['Padding Data'])
         # 进行DNS查询，解析IP地址为域名
         #result['Source'] = resolve_ip_to_hostname(result['Source'])
         #result['Destination'] = resolve_ip_to_hostname(result['Destination'])
     add_to_captured_data(result)
+    print(result)
     return result
 
 # IP到域名的解析函数
@@ -84,7 +96,7 @@ def stop_sniffer_function():
 # 数据包显示函数
 def display_packet(parsed_data):
     if parsed_data:
-        tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('SrcPort'), parsed_data.get('DesPort')])
+        tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
 
 # IP分片重组函数（简单示例）
 def reassemble_ip_fragments(packets):
@@ -151,6 +163,25 @@ def export_packets():
 def add_to_captured_data(parsed_data):
     if parsed_data:
         captured_data.append(parsed_data)
+
+def on_item_select(event):
+    # 获取选中的条目
+    selected_item = tree.selection()
+    if selected_item:
+        # 获取当前选中行的详细信息
+        item = tree.item(selected_item)
+        print(item)
+        # 获取包含的值
+        packet_info = item["values"]
+        print(packet_info)
+        # 从packet_info中提取Raw Data或Padding信息
+        raw_data = packet_info[-2]  # 假设Raw Data是倒数第二列
+        padding_data = packet_info[-1]  # 假设Padding是最后一列
+        
+        # 在Text框中显示详细信息
+        detail_text.delete(1.0, tk.END)  # 清空当前内容
+        detail_text.insert(tk.END, f"Raw Data:\n{raw_data}\n\nPadding Data:\n{padding_data}")
+
 # 主程序
 if __name__ == "__main__":
     root = tk.Tk()
@@ -159,15 +190,22 @@ if __name__ == "__main__":
     frame = ttk.Frame(root)
     frame.pack(fill="both", expand=True)
 
-    tree = ttk.Treeview(frame, columns=("Protocol", "Source", "Destination","Data","SrcPort","DesPort"), show="headings")
+    tree = ttk.Treeview(frame, columns=("Protocol", "Source", "Destination","Data","Source Port","Destination Port","Raw Data","Padding Data"), show="headings")
     tree.heading("Protocol", text="Protocol")
     tree.heading("Source", text="Source")
     tree.heading("Destination", text="Destination")
     tree.heading("Data", text="Data")
-    tree.heading("SrcPort", text="Source Port")
-    tree.heading("DesPort", text="Destination Port")
+    tree.heading("Source Port", text="Source Port")
+    tree.heading("Destination Port", text="Destination Port")
+    tree.heading("Raw Data", text="Raw Data")
+    tree.heading("Padding Data", text="Padding Data")
     tree.pack(fill="both", expand=True)
-
+    
+    detail_frame = ttk.Frame(root)
+    detail_frame.pack(fill="both", expand=True)
+    detail_text = tk.Text(detail_frame, wrap="word", height=10, width=50)
+    detail_text.pack(fill="both", expand=True)
+    tree.bind("<ButtonRelease-1>", on_item_select)
     # 用户选择网卡
     interfaces = get_network_interfaces()
     selected_interface = tk.StringVar()
