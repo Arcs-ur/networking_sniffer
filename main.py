@@ -1,6 +1,7 @@
 import scapy.all as scapy
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP
+from scapy.layers.inet6 import IPv6
 from scapy.packet import Raw, Padding
 import socket
 import threading
@@ -10,6 +11,7 @@ import json
 import csv
 from tkinter import filedialog
 from tkinter import simpledialog
+import base64
 
 captured_data = []
 
@@ -30,21 +32,72 @@ def parse_packet(packet):
             result['Protocol'] = "TCP"
             result['Source Port'] = packet[TCP].sport
             result['Destination Port'] = packet[TCP].dport
+            if packet[TCP].dport == 21 or packet[TCP].sport == 21:
+                result['Protocol'] = "FTP"
+            elif packet[TCP].dport == 80 or packet[TCP].sport == 80:
+                result['Protocol'] = "HTTP"
+            elif packet[TCP].dport == 443 or packet[TCP].sport == 443:
+                result['Protocol'] = "HTTPS"
+            elif packet[TCP].dport == 25 or packet[TCP].sport == 25:
+                result['Protocol'] = "SMTP"
+            elif packet[TCP].dport == 110 or packet[TCP].sport == 110:
+                result['Protocol'] = "POP3"
+            elif packet[TCP].dport == 143 or packet[TCP].sport == 143:
+                result['Protocol'] = "IMAP"
+            elif packet[TCP].dport == 23 or packet[TCP].sport == 23:
+                result['Protocol'] = "Telnet"
         elif packet.haslayer(UDP):
             result['Protocol'] = "UDP"
             result['Source Port'] = packet[UDP].sport
             result['Destination Port'] = packet[UDP].dport
+            if packet[UDP].dport == 53 or packet[UDP].sport == 53:
+                result['Protocol'] = "DNS"
+        if packet.haslayer(Raw):
+            try:
+            # 将 Raw 数据字节串解码为字符串
+                result['Raw Data'] = (packet[Raw].load).decode('ascii')  # 或使用 'utf-8'
+            except UnicodeDecodeError:
+            # 如果无法解码为字符串，记录为十六进制
+                result['Raw Data'] = (packet[Raw].load).hex()
+        if packet.haslayer(Padding):
+            #result['Padding Data'] = packet[Padding].load.hex()
+            result['Padding Data'] = (packet[Padding].load).decode('utf-8')
+    elif packet.haslayer(IPv6):
+        result['Protocol'] = "IPv6"
+        result['Source'] = packet[IPv6].src
+        result['Destination'] = packet[IPv6].dst
+        result['Data'] = str(packet[IPv6].payload)
+        #print(packet.show())
+        if packet.haslayer(ICMP):
+            result['Protocol'] = "ICMP"
+        elif packet.haslayer(TCP):
+            result['Protocol'] = "TCP"
+            result['Source Port'] = packet[TCP].sport
+            result['Destination Port'] = packet[TCP].dport
+            if packet[TCP].dport == 21 or packet[TCP].sport == 21:
+                result['Protocol'] = "FTP"
+            elif packet[TCP].dport == 80 or packet[TCP].sport == 80:
+                result['Protocol'] = "HTTP"
+            elif packet[TCP].dport == 443 or packet[TCP].sport == 443:
+                result['Protocol'] = "HTTPS"
+            elif packet[TCP].dport == 25 or packet[TCP].sport == 25:
+                result['Protocol'] = "SMTP"
+            elif packet[TCP].dport == 110 or packet[TCP].sport == 110:
+                result['Protocol'] = "POP3"
+            elif packet[TCP].dport == 143 or packet[TCP].sport == 143:
+                result['Protocol'] = "IMAP"
+            elif packet[TCP].dport == 23 or packet[TCP].sport == 23:
+                result['Protocol'] = "Telnet"
+        elif packet.haslayer(UDP):
+            result['Protocol'] = "UDP"
+            result['Source Port'] = packet[UDP].sport
+            result['Destination Port'] = packet[UDP].dport
+            if packet[UDP].dport == 53 or packet[UDP].sport == 53:
+                result['Protocol'] = "DNS"
         if packet.haslayer(Raw):
             result['Raw Data'] = packet[Raw].load.hex()
-            print(result['Raw Data'])
         if packet.haslayer(Padding):
             result['Padding Data'] = packet[Padding].load.hex()
-            print(result['Padding Data'])
-    #add_to_captured_data(result)
-    # if packet.haslayer(Raw):
-    #         result['Raw Data'] = packet[Raw].load
-    # if packet.haslayer(Padding):
-    #         result['Padding Data'] = packet[Padding].load
     return result
 
 def resolve_ip_to_hostname(ip):
@@ -96,20 +149,7 @@ def display_packet(parsed_data, protocol_filter, source_ip_filter, destination_i
         tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
         add_to_captured_data(parsed_data)
 
-# def reassemble_ip_fragments(packets):
-#     fragments = {}
-#     for packet in packets:
-#         if packet.haslayer(IP) and packet[IP].flags == 1:
-#             id = packet[IP].id
-#             if id not in fragments:
-#                 fragments[id] = []
-#             fragments[id].append(packet)
-#     reassembled_packets = []
-#     for id, fragment_list in fragments.items():
-#         reassembled_packets.append(fragment_list[0])
-#     return reassembled_packets
-    
-def reassemble_ip_fragments(packets):
+def reassemble_ip_fragments(packets, show_fragments):
     fragments = {}
     reassembled_packets = []
 
@@ -141,7 +181,10 @@ def reassemble_ip_fragments(packets):
         reassembled_packet[IP].payload = full_data
         reassembled_packets.append(reassembled_packet)
 
-    return reassembled_packets
+    if show_fragments:
+        return packets  # 返回原始的分片数据包
+    else:
+        return reassembled_packets  # 返回重组后的数据包
 
 def get_network_interfaces():
     interfaces = scapy.get_if_list()
@@ -174,7 +217,6 @@ def save_as_csv(data):
 
 def export_packets():
     save_format = simpledialog.askstring("Save Format", "Enter the format to save as (json/csv):")
-    #print(captured_data)
     if save_format == "json":
         save_as_json(captured_data)
     elif save_format == "csv":
@@ -209,7 +251,12 @@ def create_filter_widgets(root):
     destination_ip_filter = ttk.Entry(root)
     destination_ip_filter.pack()
 
-    return protocol_filter, source_ip_filter, destination_ip_filter
+    ttk.Label(root, text="Show Raw Fragments (Display original fragments)").pack()
+    show_fragments_var = tk.BooleanVar(value=False)
+    show_fragments_checkbox = ttk.Checkbutton(root, text="Show Raw Fragments", variable=show_fragments_var)
+    show_fragments_checkbox.pack()
+
+    return protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var
 
 if __name__ == "__main__":
     root = tk.Tk()
@@ -240,7 +287,7 @@ if __name__ == "__main__":
     dropdown = ttk.Combobox(root, textvariable=selected_interface, values=interfaces)
     dropdown.pack()
 
-    protocol_filter, source_ip_filter, destination_ip_filter = create_filter_widgets(root)
+    protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var = create_filter_widgets(root)
 
     start_button = ttk.Button(root, text="Start", command=lambda: start_sniffer(selected_interface.get(), protocol_filter, source_ip_filter, destination_ip_filter))
     start_button.pack()
