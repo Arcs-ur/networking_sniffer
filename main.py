@@ -5,8 +5,14 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import ttk
-
+import tkinter as tk
+from tkinter import ttk
+import json
+import csv
+from tkinter import filedialog
+from tkinter import simpledialog
 # 对packet进行解析，这里的packet是一个报文对象，返回一个字典result
+captured_data = []
 def parse_packet(packet):
     result = {}
     
@@ -36,9 +42,9 @@ def parse_packet(packet):
             result['Destination Port'] = packet[UDP].dport
         
         # 进行DNS查询，解析IP地址为域名
-        result['Source'] = resolve_ip_to_hostname(result['Source'])
-        result['Destination'] = resolve_ip_to_hostname(result['Destination'])
-    
+        #result['Source'] = resolve_ip_to_hostname(result['Source'])
+        #result['Destination'] = resolve_ip_to_hostname(result['Destination'])
+    add_to_captured_data(result)
     return result
 
 # IP到域名的解析函数
@@ -104,9 +110,47 @@ def get_network_interfaces():
         # 如果接口有一个有效的硬件地址（MAC地址），则它是一个实际的网络接口
         if scapy.get_if_hwaddr(iface) != "00:00:00:00:00:00":  # 确保排除没有硬件地址的接口
             interface_names.append(iface)
-    
-    return interface_names
 
+    return interfaces
+    #作为一个可选功能吧
+    #return interface_names
+
+def clear_packets():
+    for item in tree.get_children():  # 获取所有行
+        tree.delete(item)
+        
+# 保存为 JSON 文件
+def save_as_json(data):
+    file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+    if file_path:
+        with open(file_path, "w") as json_file:
+            json.dump(data, json_file, indent=4)
+    print(f"Saved as {file_path}")
+
+# 保存为 CSV 文件
+def save_as_csv(data):
+    file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+    if file_path:
+        with open(file_path, "w", newline='') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=data[0].keys())
+            writer.writeheader()
+            writer.writerows(data)
+    print(f"Saved as {file_path}")
+
+def export_packets():
+    # 提供选择导出格式的方式
+    save_format = simpledialog.askstring("Save Format", "Enter the format to save as (json/csv):")
+    
+    if save_format == "json":
+        save_as_json(captured_data)
+    elif save_format == "csv":
+        save_as_csv(captured_data)
+    else:
+        print("Invalid format. Please choose 'json' or 'csv'.")
+
+def add_to_captured_data(parsed_data):
+    if parsed_data:
+        captured_data.append(parsed_data)
 # 主程序
 if __name__ == "__main__":
     root = tk.Tk()
@@ -136,5 +180,12 @@ if __name__ == "__main__":
 
     stop_button = ttk.Button(root, text="Stop", command=lambda: stop_sniffer_function())
     stop_button.pack()
+
+    # 清空按钮
+    clear_button = ttk.Button(root, text="Clear", command=clear_packets)
+    clear_button.pack()
+
+    export_button = ttk.Button(root, text="Export", command=export_packets)
+    export_button.pack()
 
     root.mainloop()
