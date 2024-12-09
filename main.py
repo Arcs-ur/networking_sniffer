@@ -107,19 +107,19 @@ def resolve_ip_to_hostname(ip):
         hostname = ip
     return hostname
 
-def capture_packets(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, output_callback):
+def capture_packets(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var ,output_callback):
     def stop_filter(x):
         return stop_event.is_set()
 
-    scapy.sniff(iface=interface, prn=lambda x: output_callback(parse_packet(x), protocol_filter, source_ip_filter, destination_ip_filter), stop_filter=stop_filter)
+    scapy.sniff(iface=interface, prn=lambda x: output_callback(parse_packet(x), protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var), stop_filter=stop_filter)
 
-def start_sniffer(interface, protocol_filter, source_ip_filter, destination_ip_filter):
+def start_sniffer(interface, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var):
     stop_event = threading.Event()
 
     def stop_sniffing():
         stop_event.set()
 
-    threading.Thread(target=capture_packets, args=(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, display_packet)).start()
+    threading.Thread(target=capture_packets, args=(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var, display_packet)).start()
     global global_stop_sniffing
     global_stop_sniffing = stop_sniffing
     return stop_event
@@ -129,25 +129,31 @@ def stop_sniffer_function():
     if global_stop_sniffing:
         global_stop_sniffing()
 
-def display_packet(parsed_data, protocol_filter, source_ip_filter, destination_ip_filter):
-    protocol_condition = protocol_filter.get().strip().lower()
-    source_ip_condition = source_ip_filter.get().strip()
-    destination_ip_condition = destination_ip_filter.get().strip()
+def display_packet(parsed_data, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var):
+        # if show_fragments_var:
+        #     reassembled_packets = reassemble_ip_fragments([parsed_data], show_fragments_var)
+        # else:
+        #     reassembled_packets = [parsed_data]
 
-    display = True
+        # for packet in reassembled_packets:
+            protocol_condition = protocol_filter.get().strip().lower()
+            source_ip_condition = source_ip_filter.get().strip()
+            destination_ip_condition = destination_ip_filter.get().strip()
 
-    if protocol_condition != "" and parsed_data.get("Protocol", "").lower() != protocol_condition:
-        display = False
+            display = True
 
-    if source_ip_condition != "" and parsed_data.get("Source", "") != source_ip_condition:
-        display = False
+            if protocol_condition != "" and parsed_data.get("Protocol", "").lower() != protocol_condition:
+                display = False
 
-    if destination_ip_condition != "" and parsed_data.get("Destination", "") != destination_ip_condition:
-        display = False
+            if source_ip_condition != "" and parsed_data.get("Source", "") != source_ip_condition:
+                display = False
 
-    if display:
-        tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
-        add_to_captured_data(parsed_data)
+            if destination_ip_condition != "" and parsed_data.get("Destination", "") != destination_ip_condition:
+                display = False
+
+            if display:
+                tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
+                add_to_captured_data(parsed_data)
 
 def reassemble_ip_fragments(packets, show_fragments):
     fragments = {}
@@ -155,6 +161,7 @@ def reassemble_ip_fragments(packets, show_fragments):
 
     # 收集所有分片
     for packet in packets:
+        #print(packet)
         if packet.haslayer(IP):
             ip_layer = packet[IP]
             # 检查是否是分片
@@ -289,7 +296,7 @@ if __name__ == "__main__":
 
     protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var = create_filter_widgets(root)
 
-    start_button = ttk.Button(root, text="Start", command=lambda: start_sniffer(selected_interface.get(), protocol_filter, source_ip_filter, destination_ip_filter))
+    start_button = ttk.Button(root, text="Start", command=lambda: start_sniffer(selected_interface.get(), protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var))
     start_button.pack()
 
     stop_button = ttk.Button(root, text="Stop", command=stop_sniffer_function)
