@@ -6,132 +6,121 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import ttk
-import tkinter as tk
-from tkinter import ttk
 import json
 import csv
 from tkinter import filedialog
 from tkinter import simpledialog
-# 对packet进行解析，这里的packet是一个报文对象，返回一个字典result
+
 captured_data = []
+
 def parse_packet(packet):
     result = {}
-    #print(packet.show())
-    # 解析ARP报文
     if packet.haslayer(ARP):
         result['Protocol'] = "ARP"
         result['Source'] = packet[ARP].psrc
         result['Destination'] = packet[ARP].pdst
-        
-    # 解析IP层报文
     elif packet.haslayer(IP):
         result['Protocol'] = "IP"
         result['Source'] = packet[IP].src
         result['Destination'] = packet[IP].dst
-        #result['Data'] = bytes(packet[IP].payload).decode('utf-8', errors='ignore')
-        result['Data'] = packet[IP].payload
-        #print('aaaa',result['Data'])
-        # 进一步解析ICMP/TCP/UDP层
+        result['Data'] = str(packet[IP].payload)
         if packet.haslayer(ICMP):
             result['Protocol'] = "ICMP"
         elif packet.haslayer(TCP):
             result['Protocol'] = "TCP"
             result['Source Port'] = packet[TCP].sport
             result['Destination Port'] = packet[TCP].dport
-            #result['Raw Data'] = packet[TCP].payload
-            #print('bbbb',result['Raw Data'])
-            
         elif packet.haslayer(UDP):
             result['Protocol'] = "UDP"
             result['Source Port'] = packet[UDP].sport
             result['Destination Port'] = packet[UDP].dport
-
         if packet.haslayer(Raw):
-            result['Raw Data'] = packet[Raw].load
-            #print(result['Raw Data'])
+            result['Raw Data'] = packet[Raw].load.hex()
+            print(result['Raw Data'])
         if packet.haslayer(Padding):
-            result['Padding Data'] = packet[Padding].load
-            #print(result['Padding Data'])
-        # 进行DNS查询，解析IP地址为域名
-        #result['Source'] = resolve_ip_to_hostname(result['Source'])
-        #result['Destination'] = resolve_ip_to_hostname(result['Destination'])
-    add_to_captured_data(result)
-    print(result)
+            result['Padding Data'] = packet[Padding].load.hex()
+            print(result['Padding Data'])
+    #add_to_captured_data(result)
+    # if packet.haslayer(Raw):
+    #         result['Raw Data'] = packet[Raw].load
+    # if packet.haslayer(Padding):
+    #         result['Padding Data'] = packet[Padding].load
     return result
 
-# IP到域名的解析函数
 def resolve_ip_to_hostname(ip):
     try:
-        hostname = socket.gethostbyaddr(ip)[0]  # 返回域名
+        hostname = socket.gethostbyaddr(ip)[0]
     except socket.herror:
-        hostname = ip  # 如果解析失败，返回原始IP
+        hostname = ip
     return hostname
 
-# 数据包捕获函数，interface是网卡名，stop_event是停止捕获的事件，output_callback是数据包显示函数
-def capture_packets(interface, stop_event, output_callback):
+def capture_packets(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, output_callback):
     def stop_filter(x):
-        return stop_event.is_set()  # 当stop_event被设置时返回True，表示停止捕获
-    
-    # 捕获数据包，prn是回调函数，每捕获一个数据包，就调用一次output_callback函数
-    scapy.sniff(iface=interface, prn=lambda x: output_callback(parse_packet(x)), stop_filter=stop_filter)
+        return stop_event.is_set()
 
-# GUI实现
-global_stop_sniffing = None
-def start_sniffer(interface):
+    scapy.sniff(iface=interface, prn=lambda x: output_callback(parse_packet(x), protocol_filter, source_ip_filter, destination_ip_filter), stop_filter=stop_filter)
+
+def start_sniffer(interface, protocol_filter, source_ip_filter, destination_ip_filter):
     stop_event = threading.Event()
 
     def stop_sniffing():
-        stop_event.set()  # 触发stop_event，表示停止抓包
+        stop_event.set()
 
-    threading.Thread(target=capture_packets, args=(interface, stop_event, display_packet)).start()  # 启动数据包捕获线程
+    threading.Thread(target=capture_packets, args=(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, display_packet)).start()
     global global_stop_sniffing
-    global_stop_sniffing = stop_sniffing  # 将stop_sniffing存储为全局变量，方便在stop_button中使用
+    global_stop_sniffing = stop_sniffing
     return stop_event
 
 def stop_sniffer_function():
     global global_stop_sniffing
     if global_stop_sniffing:
-        global_stop_sniffing()  # 调用全局的stop_sniffing来停止抓包
+        global_stop_sniffing()
 
-# 数据包显示函数
-def display_packet(parsed_data):
-    if parsed_data:
+def display_packet(parsed_data, protocol_filter, source_ip_filter, destination_ip_filter):
+    protocol_condition = protocol_filter.get().strip().lower()
+    source_ip_condition = source_ip_filter.get().strip()
+    destination_ip_condition = destination_ip_filter.get().strip()
+
+    display = True
+
+    if protocol_condition != "" and parsed_data.get("Protocol", "").lower() != protocol_condition:
+        display = False
+
+    if source_ip_condition != "" and parsed_data.get("Source", "") != source_ip_condition:
+        display = False
+
+    if destination_ip_condition != "" and parsed_data.get("Destination", "") != destination_ip_condition:
+        display = False
+
+    if display:
         tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
-
-# IP分片重组函数（简单示例）
+        add_to_captured_data(parsed_data)
 def reassemble_ip_fragments(packets):
     fragments = {}
     for packet in packets:
-        if packet.haslayer(IP) and packet[IP].flags == 1:  # MF标志位
+        if packet.haslayer(IP) and packet[IP].flags == 1:
             id = packet[IP].id
             if id not in fragments:
                 fragments[id] = []
             fragments[id].append(packet)
-    # 重组逻辑
     reassembled_packets = []
     for id, fragment_list in fragments.items():
-        reassembled_packets.append(fragment_list[0])  # 简单逻辑示例
+        reassembled_packets.append(fragment_list[0])
     return reassembled_packets
 
 def get_network_interfaces():
-    interfaces = scapy.get_if_list()  # 获取接口列表
+    interfaces = scapy.get_if_list()
     interface_names = []
-
-    # 遍历所有接口
     for iface in interfaces:
-        # 如果接口有一个有效的硬件地址（MAC地址），则它是一个实际的网络接口
-        if scapy.get_if_hwaddr(iface) != "00:00:00:00:00:00":  # 确保排除没有硬件地址的接口
+        if scapy.get_if_hwaddr(iface) != "00:00:00:00:00:00":
             interface_names.append(iface)
-
-    return interfaces
-    #作为一个可选功能吧
-    #return interface_names
+    return interface_names
 
 def clear_packets():
-    for item in tree.get_children():  # 获取所有行
+    for item in tree.get_children():
         tree.delete(item)
-        
-# 保存为 JSON 文件
+    captured_data.clear()
+
 def save_as_json(data):
     file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
     if file_path:
@@ -139,7 +128,6 @@ def save_as_json(data):
             json.dump(data, json_file, indent=4)
     print(f"Saved as {file_path}")
 
-# 保存为 CSV 文件
 def save_as_csv(data):
     file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
     if file_path:
@@ -150,9 +138,8 @@ def save_as_csv(data):
     print(f"Saved as {file_path}")
 
 def export_packets():
-    # 提供选择导出格式的方式
     save_format = simpledialog.askstring("Save Format", "Enter the format to save as (json/csv):")
-    
+    #print(captured_data)
     if save_format == "json":
         save_as_json(captured_data)
     elif save_format == "csv":
@@ -165,24 +152,30 @@ def add_to_captured_data(parsed_data):
         captured_data.append(parsed_data)
 
 def on_item_select(event):
-    # 获取选中的条目
     selected_item = tree.selection()
     if selected_item:
-        # 获取当前选中行的详细信息
         item = tree.item(selected_item)
-        print(item)
-        # 获取包含的值
         packet_info = item["values"]
-        print(packet_info)
-        # 从packet_info中提取Raw Data或Padding信息
-        raw_data = packet_info[-2]  # 假设Raw Data是倒数第二列
-        padding_data = packet_info[-1]  # 假设Padding是最后一列
-        
-        # 在Text框中显示详细信息
-        detail_text.delete(1.0, tk.END)  # 清空当前内容
+        raw_data = packet_info[-2]
+        padding_data = packet_info[-1]
+        detail_text.delete(1.0, tk.END)
         detail_text.insert(tk.END, f"Raw Data:\n{raw_data}\n\nPadding Data:\n{padding_data}")
 
-# 主程序
+def create_filter_widgets(root):
+    ttk.Label(root, text="Protocol Filter (e.g. TCP, UDP, ARP, *):").pack()
+    protocol_filter = ttk.Entry(root)
+    protocol_filter.pack()
+
+    ttk.Label(root, text="Source IP Filter (e.g. 192.168.0.1, *):").pack()
+    source_ip_filter = ttk.Entry(root)
+    source_ip_filter.pack()
+
+    ttk.Label(root, text="Destination IP Filter (e.g. 192.168.0.2, *):").pack()
+    destination_ip_filter = ttk.Entry(root)
+    destination_ip_filter.pack()
+
+    return protocol_filter, source_ip_filter, destination_ip_filter
+
 if __name__ == "__main__":
     root = tk.Tk()
     root.title("Network Sniffer")
@@ -190,7 +183,7 @@ if __name__ == "__main__":
     frame = ttk.Frame(root)
     frame.pack(fill="both", expand=True)
 
-    tree = ttk.Treeview(frame, columns=("Protocol", "Source", "Destination","Data","Source Port","Destination Port","Raw Data","Padding Data"), show="headings")
+    tree = ttk.Treeview(frame, columns=("Protocol", "Source", "Destination", "Data", "Source Port", "Destination Port", "Raw Data", "Padding Data"), show="headings")
     tree.heading("Protocol", text="Protocol")
     tree.heading("Source", text="Source")
     tree.heading("Destination", text="Destination")
@@ -206,20 +199,20 @@ if __name__ == "__main__":
     detail_text = tk.Text(detail_frame, wrap="word", height=10, width=50)
     detail_text.pack(fill="both", expand=True)
     tree.bind("<ButtonRelease-1>", on_item_select)
-    # 用户选择网卡
+
     interfaces = get_network_interfaces()
     selected_interface = tk.StringVar()
     dropdown = ttk.Combobox(root, textvariable=selected_interface, values=interfaces)
     dropdown.pack()
 
-    # 开始和停止按钮
-    start_button = ttk.Button(root, text="Start", command=lambda: start_sniffer(selected_interface.get()))
+    protocol_filter, source_ip_filter, destination_ip_filter = create_filter_widgets(root)
+
+    start_button = ttk.Button(root, text="Start", command=lambda: start_sniffer(selected_interface.get(), protocol_filter, source_ip_filter, destination_ip_filter))
     start_button.pack()
 
-    stop_button = ttk.Button(root, text="Stop", command=lambda: stop_sniffer_function())
+    stop_button = ttk.Button(root, text="Stop", command=stop_sniffer_function)
     stop_button.pack()
 
-    # 清空按钮
     clear_button = ttk.Button(root, text="Clear", command=clear_packets)
     clear_button.pack()
 
