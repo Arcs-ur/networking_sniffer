@@ -24,21 +24,21 @@ def parse_packet(packet):
         result['Destination'] = packet[ARP].pdst
     elif packet.haslayer(IP):
         result['flags'] = packet[IP].flags
-        if packet[IP].id is not None:
-            result['IPID'] = packet[IP].id
-        else:
-            result['IPID'] = None
         result['offset'] = packet[IP].frag
         result['Protocol'] = "IP"
         result['Source'] = packet[IP].src
         result['Destination'] = packet[IP].dst
         result['Data'] = str(packet[IP].payload)
         if packet.haslayer(ICMP):
+            if packet[IP].id is not None:
+                result['IPID'] = packet[IP].id
             result['Protocol'] = "ICMP"
         elif packet.haslayer(TCP):
             result['Protocol'] = "TCP"
             result['Source Port'] = packet[TCP].sport
             result['Destination Port'] = packet[TCP].dport
+            if packet[IP].id is not None:
+                result['IPID'] = packet[IP].id
             if packet[TCP].dport == 21 or packet[TCP].sport == 21 or packet[TCP].dport == 20 or packet[TCP].sport == 20:
                 result['Protocol'] = "FTP"
             elif packet[TCP].dport == 80 or packet[TCP].sport == 80:
@@ -145,7 +145,7 @@ fragments = {}
 reassembled_packets = []
 
 def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip_filter):            
-            if parsed_data["Protocol"] in ["IP", "TCP", "UDP", "ICMP","POP3","IMAP","FTP","HTTP","HTTPS","SMTP","Telnet","DNS"]:
+            if parsed_data["Protocol"] in ["IP", "TCP", "ICMP","POP3","IMAP","FTP","HTTP","HTTPS","SMTP","Telnet"]:
                 # 检查是否是分片
                 if parsed_data["flags"] == 1:  # MF flag is set or this is the last fragment
                     # 使用 IP ID 作为唯一标识符
@@ -167,9 +167,7 @@ def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip
                             # 将完整的数据填充到第一个分片的payload中
                             reassembled_packet["Raw Data"] = full_data
                             parsed_data.set('Raw Data', str(reassembled_packet["Raw Data"]))
-            # print(protocol_filter.get())
-            # print(source_ip_filter.get())
-            # print(destination_ip_filter.get())
+
             protocol_condition = protocol_filter.get().strip().lower()
             source_ip_condition = source_ip_filter.get().strip()
             destination_ip_condition = destination_ip_filter.get().strip()
