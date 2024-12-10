@@ -11,7 +11,7 @@ import json
 import csv
 from tkinter import filedialog
 from tkinter import simpledialog
-import base64
+
 
 captured_data = []
 
@@ -188,28 +188,6 @@ def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip
             if display:
                 tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
                 add_to_captured_data(parsed_data)
-
-# def reassemble_ip_fragments(packets, show_fragments):
-#     global fragments
-#     for packet_id, fragment_list in fragments.items():
-#         # 对分片按照 offset 排序
-#         fragment_list.sort(key=lambda pkt: pkt[IP].frag)
-
-#         # 创建一个新的完整数据包
-#         reassembled_packet = fragment_list[0]  # 获取第一个分片（通常是头部信息）
-#         full_data = b""
-
-#         for fragment in fragment_list:
-#             full_data += bytes(fragment[IP].payload)
-
-#         # 将完整的数据填充到第一个分片的payload中
-#         reassembled_packet[IP].payload = full_data
-#         reassembled_packets.append(reassembled_packet)
-
-#     if show_fragments:
-#         return packets  # 返回原始的分片数据包
-#     else:
-#         return reassembled_packets  # 返回重组后的数据包
 
 def get_network_interfaces():
     interfaces = scapy.get_if_list()
