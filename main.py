@@ -17,6 +17,7 @@ captured_data = []
 
 def parse_packet(packet):
     result = {}
+    print(packet.show())
     if packet.haslayer(ARP):
         result['Protocol'] = "ARP"
         result['Source'] = packet[ARP].psrc
@@ -143,8 +144,7 @@ global reassembled_packets
 fragments = {}
 reassembled_packets = []
 
-def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip_filter): 
-            print(parsed_data)           
+def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip_filter):            
             if parsed_data["Protocol"] in ["IP", "TCP", "UDP", "ICMP","POP3","IMAP","FTP","HTTP","HTTPS","SMTP","Telnet","DNS"]:
                 # 检查是否是分片
                 if parsed_data["flags"] == 1:  # MF flag is set or this is the last fragment
@@ -188,6 +188,7 @@ def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip
             if display:
                 tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
                 add_to_captured_data(parsed_data)
+                #这里上面这行简单的修改一下就可以
 
 def get_network_interfaces():
     interfaces = scapy.get_if_list()
