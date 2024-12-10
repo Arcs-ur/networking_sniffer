@@ -23,7 +23,10 @@ def parse_packet(packet):
         result['Destination'] = packet[ARP].pdst
     elif packet.haslayer(IP):
         result['flags'] = packet[IP].flags
-        result['IPID'] = packet[IP].id
+        if packet[IP].id is not None:
+            result['IPID'] = packet[IP].id
+        else:
+            result['IPID'] = None
         result['offset'] = packet[IP].frag
         result['Protocol'] = "IP"
         result['Source'] = packet[IP].src
@@ -35,7 +38,7 @@ def parse_packet(packet):
             result['Protocol'] = "TCP"
             result['Source Port'] = packet[TCP].sport
             result['Destination Port'] = packet[TCP].dport
-            if packet[TCP].dport == 21 or packet[TCP].sport == 21:
+            if packet[TCP].dport == 21 or packet[TCP].sport == 21 or packet[TCP].dport == 20 or packet[TCP].sport == 20:
                 result['Protocol'] = "FTP"
             elif packet[TCP].dport == 80 or packet[TCP].sport == 80:
                 result['Protocol'] = "HTTP"
@@ -80,7 +83,7 @@ def parse_packet(packet):
             result['Protocol'] = "TCP"
             result['Source Port'] = packet[TCP].sport
             result['Destination Port'] = packet[TCP].dport
-            if packet[TCP].dport == 21 or packet[TCP].sport == 21:
+            if packet[TCP].dport == 21 or packet[TCP].sport == 21 or packet[TCP].dport == 20 or packet[TCP].sport == 20:
                 result['Protocol'] = "FTP"
             elif packet[TCP].dport == 80 or packet[TCP].sport == 80:
                 result['Protocol'] = "HTTP"
