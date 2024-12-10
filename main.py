@@ -22,6 +22,9 @@ def parse_packet(packet):
         result['Source'] = packet[ARP].psrc
         result['Destination'] = packet[ARP].pdst
     elif packet.haslayer(IP):
+        result['flags'] = packet[IP].flags
+        result['IPID'] = packet[IP].id
+        result['offset'] = packet[IP].frag
         result['Protocol'] = "IP"
         result['Source'] = packet[IP].src
         result['Destination'] = packet[IP].dst
@@ -63,6 +66,9 @@ def parse_packet(packet):
             #result['Padding Data'] = packet[Padding].load.hex()
             result['Padding Data'] = (packet[Padding].load).decode('utf-8')
     elif packet.haslayer(IPv6):
+        result['flags'] = packet[IPv6].fl
+        #result['IPID'] = packet[IPv6].id
+        #result['offset'] = packet[IPv6].offset
         result['Protocol'] = "IPv6"
         result['Source'] = packet[IPv6].src
         result['Destination'] = packet[IPv6].dst
@@ -107,11 +113,11 @@ def resolve_ip_to_hostname(ip):
         hostname = ip
     return hostname
 
-def capture_packets(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var ,output_callback):
+def capture_packets(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter,output_callback):
     def stop_filter(x):
         return stop_event.is_set()
 
-    scapy.sniff(iface=interface, prn=lambda x: output_callback(parse_packet(x), protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var), stop_filter=stop_filter)
+    scapy.sniff(iface=interface, prn=lambda x: output_callback(parse_packet(x), protocol_filter, source_ip_filter, destination_ip_filter), stop_filter=stop_filter)
 
 def start_sniffer(interface, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var):
     stop_event = threading.Event()
@@ -119,7 +125,7 @@ def start_sniffer(interface, protocol_filter, source_ip_filter, destination_ip_f
     def stop_sniffing():
         stop_event.set()
 
-    threading.Thread(target=capture_packets, args=(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var, display_packet)).start()
+    threading.Thread(target=capture_packets, args=(interface, stop_event, protocol_filter, source_ip_filter, destination_ip_filter, display_packet)).start()
     global global_stop_sniffing
     global_stop_sniffing = stop_sniffing
     return stop_event
@@ -129,13 +135,38 @@ def stop_sniffer_function():
     if global_stop_sniffing:
         global_stop_sniffing()
 
-def display_packet(parsed_data, protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var):
-        # if show_fragments_var:
-        #     reassembled_packets = reassemble_ip_fragments([parsed_data], show_fragments_var)
-        # else:
-        #     reassembled_packets = [parsed_data]
+global fragments 
+global reassembled_packets 
+fragments = {}
+reassembled_packets = []
 
-        # for packet in reassembled_packets:
+def display_packet(parsed_data,protocol_filter, source_ip_filter, destination_ip_filter): 
+            print(parsed_data)           
+            if parsed_data["Protocol"] in ["IP", "TCP", "UDP", "ICMP","POP3","IMAP","FTP","HTTP","HTTPS","SMTP","Telnet","DNS"]:
+                # 检查是否是分片
+                if parsed_data["flags"] == 1:  # MF flag is set or this is the last fragment
+                    # 使用 IP ID 作为唯一标识符
+                    packet_id = parsed_data["IPID"]
+                    if packet_id not in fragments:
+                        fragments[packet_id] = []
+                    fragments[packet_id].append(parsed_data)
+                    return
+                if parsed_data["flags"] == 0:
+                    packet_id = parsed_data["IPID"]
+                    if packet_id in fragments:
+                        fragments[packet_id].append(parsed_data)
+                        for fragment_list in fragments[packet_id]:
+                            fragment_list.sort(key=lambda pkt: pkt["offset"])
+                            reassembled_packet = fragment_list[0]  # 获取第一个分片（通常是头部信息）
+                            full_data = b""
+                            for fragment in fragment_list:
+                                full_data += bytes(fragment["Raw Data"])
+                            # 将完整的数据填充到第一个分片的payload中
+                            reassembled_packet["Raw Data"] = full_data
+                            parsed_data.set('Raw Data', str(reassembled_packet["Raw Data"]))
+            # print(protocol_filter.get())
+            # print(source_ip_filter.get())
+            # print(destination_ip_filter.get())
             protocol_condition = protocol_filter.get().strip().lower()
             source_ip_condition = source_ip_filter.get().strip()
             destination_ip_condition = destination_ip_filter.get().strip()
@@ -155,43 +186,27 @@ def display_packet(parsed_data, protocol_filter, source_ip_filter, destination_i
                 tree.insert("", "end", values=[parsed_data.get('Protocol'), parsed_data.get('Source'), parsed_data.get('Destination'), parsed_data.get('Data'), parsed_data.get('Source Port'), parsed_data.get('Destination Port'), parsed_data.get('Raw Data'), parsed_data.get('Padding Data')])
                 add_to_captured_data(parsed_data)
 
-def reassemble_ip_fragments(packets, show_fragments):
-    fragments = {}
-    reassembled_packets = []
+# def reassemble_ip_fragments(packets, show_fragments):
+#     global fragments
+#     for packet_id, fragment_list in fragments.items():
+#         # 对分片按照 offset 排序
+#         fragment_list.sort(key=lambda pkt: pkt[IP].frag)
 
-    # 收集所有分片
-    for packet in packets:
-        #print(packet)
-        if packet.haslayer(IP):
-            ip_layer = packet[IP]
-            # 检查是否是分片
-            if ip_layer.flags == 1 or ip_layer.flags == 0:  # MF flag is set or this is the last fragment
-                # 使用 IP ID 作为唯一标识符
-                packet_id = ip_layer.id
-                if packet_id not in fragments:
-                    fragments[packet_id] = []
-                fragments[packet_id].append(packet)
+#         # 创建一个新的完整数据包
+#         reassembled_packet = fragment_list[0]  # 获取第一个分片（通常是头部信息）
+#         full_data = b""
 
-    # 进行重组
-    for packet_id, fragment_list in fragments.items():
-        # 对分片按照 offset 排序
-        fragment_list.sort(key=lambda pkt: pkt[IP].frag)
+#         for fragment in fragment_list:
+#             full_data += bytes(fragment[IP].payload)
 
-        # 创建一个新的完整数据包
-        reassembled_packet = fragment_list[0]  # 获取第一个分片（通常是头部信息）
-        full_data = b""
+#         # 将完整的数据填充到第一个分片的payload中
+#         reassembled_packet[IP].payload = full_data
+#         reassembled_packets.append(reassembled_packet)
 
-        for fragment in fragment_list:
-            full_data += bytes(fragment[IP].payload)
-
-        # 将完整的数据填充到第一个分片的payload中
-        reassembled_packet[IP].payload = full_data
-        reassembled_packets.append(reassembled_packet)
-
-    if show_fragments:
-        return packets  # 返回原始的分片数据包
-    else:
-        return reassembled_packets  # 返回重组后的数据包
+#     if show_fragments:
+#         return packets  # 返回原始的分片数据包
+#     else:
+#         return reassembled_packets  # 返回重组后的数据包
 
 def get_network_interfaces():
     interfaces = scapy.get_if_list()
@@ -263,6 +278,7 @@ def create_filter_widgets(root):
     show_fragments_checkbox = ttk.Checkbutton(root, text="Show Raw Fragments", variable=show_fragments_var)
     show_fragments_checkbox.pack()
 
+    # print(protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var)
     return protocol_filter, source_ip_filter, destination_ip_filter, show_fragments_var
 
 if __name__ == "__main__":

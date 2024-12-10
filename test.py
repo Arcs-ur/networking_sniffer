@@ -24,22 +24,12 @@ from tkinter import simpledialog
 # send(packet)
 from scapy.all import *
 
-# 创建一个包含长数据的负载
-long_data = "A" * 100  # 创建一个包含1600个字符的负载
+from scapy.all import *
 
-# 创建三次握手的 SYN 数据包
-syn_packet = IP(dst="202.120.2.119")/TCP(dport=80, flags="S")
-syn_ack_packet = sr1(syn_packet)
+# 创建一个超过MTU的数据包
+long_data = "A" * 1000  # 数据包大于常见的1500字节MTU
 
-# 创建 ACK 数据包以完成三次握手
-ack_packet = IP(dst="202.120.2.119")/TCP(dport=80, flags="A", ack=syn_ack_packet[TCP].seq + 1)
-send(ack_packet)
-
-# 发送数据负载
-data_packet = IP(dst="202.120.2.119")/TCP(dport=80, flags="A", ack=syn_ack_packet[TCP].seq + 1)/Raw(load=long_data)
-send(data_packet)
-response = sr1(data_packet, timeout=30)  # 增加超时时间
-if response:
-    print(response.show())  # 显示响应包的详细信息
-else:
-    print("No response received.")
+# 发送带有大负载的包
+packet = IP(dst="8.8.8.8") / ICMP() / Raw(load=long_data)
+send(packet)
+print("Packet sent")
